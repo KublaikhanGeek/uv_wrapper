@@ -15,6 +15,16 @@
  *******************************************************************************/
 #include "stream_server.h"
 
+static void on_new_connection(uv_stream_t* server, int status);
+static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf);
+static void on_client_write(uv_write_t* req, int status);
+static void on_close_connection(uv_handle_t* handle);
+static void on_close_server(uv_handle_t* handle);
+static void async_cb(uv_async_t* handle);
+static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff);
+static void tcp_server_conn_close(tcp_connection_t* conn);
+static void close(tcp_server_t* tcp_server);
+
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
     tcp_connection_t* tcp_client = (tcp_connection_t*)handle->data;
@@ -29,7 +39,10 @@ static void on_client_write(uv_write_t* req, int status)
     {
         dzlog_error("Write error!");
     }
-    free(req);
+    if (req)
+    {
+        free(req);
+    }
 }
 
 static void on_close_connection(uv_handle_t* handle)
@@ -43,13 +56,21 @@ static void on_close_connection(uv_handle_t* handle)
     QUEUE_REMOVE(&(tcp_client->node));
     tcp_server->conn_count--;
 
+    if (handle)
+    {
+        free(handle);
+    }
+
     if (tcp_client)
     {
         free(tcp_client);
     }
-    if (handle)
+
+    dzlog_debug("tcp conn count: %d", tcp_server->conn_count);
+    if ((tcp_server->is_closing == true) && QUEUE_EMPTY(&(tcp_server->sessions)))
     {
-        free(handle);
+        dzlog_debug("free tcp_server");
+        free(tcp_server);
     }
 }
 
@@ -70,22 +91,17 @@ static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     }
     else
     {
-        uv_read_stop(client);
         if (tcp_server->on_conn_error)
         {
             tcp_server->on_conn_error(tcp_client, "error on_client_read");
         }
-        uv_close((uv_handle_t*)client, on_close_connection);
+        tcp_server_conn_close(tcp_client);
     }
 }
 
 static void on_close_server(uv_handle_t* handle)
 {
-    tcp_server_t* tcp_server = (tcp_server_t*)handle->data;
-    if (tcp_server)
-    {
-        free(tcp_server);
-    }
+    dzlog_info("on_close_server");
 }
 
 static void on_new_connection(uv_stream_t* server, int status)
@@ -122,19 +138,19 @@ static void on_new_connection(uv_stream_t* server, int status)
         if (tcp_client != NULL)
         {
             conn = true;
-        }
 
-        tcp_client->data    = tcp_server;
-        tcp_client->session = client;
-        QUEUE_INIT(&(tcp_client->node));
-        QUEUE_INSERT_TAIL(&(tcp_server->sessions), &(tcp_client->node));
-        client->data = tcp_client;
-        tcp_server->conn_count++; //服务连接数
-        if (tcp_server->on_conn_open)
-        {
-            tcp_server->on_conn_open(tcp_client);
+            tcp_client->data    = tcp_server;
+            tcp_client->session = client;
+            QUEUE_INIT(&(tcp_client->node));
+            QUEUE_INSERT_TAIL(&(tcp_server->sessions), &(tcp_client->node));
+            client->data = tcp_client;
+            tcp_server->conn_count++; //服务连接数
+            if (tcp_server->on_conn_open)
+            {
+                tcp_server->on_conn_open(tcp_client);
+            }
+            uv_read_start((uv_stream_t*)client, alloc_buffer, on_client_read);
         }
-        uv_read_start((uv_stream_t*)client, alloc_buffer, on_client_read);
     }
 
     if (!conn)
@@ -144,12 +160,78 @@ static void on_new_connection(uv_stream_t* server, int status)
         {
             tcp_server->on_conn_error(NULL, "accept connction failed.");
         }
-        uv_close((uv_handle_t*)client, NULL);
+
+        if (!uv_is_closing((uv_handle_t*)client))
+        {
+            uv_close((uv_handle_t*)client, NULL);
+        }
+
         if (client)
         {
             free(client);
         }
     }
+}
+
+/*******************************************************************************
+ * function name : tcp_server_conn_close
+ * description	 : close a tcp connection
+ * param[in]     : conn
+ * param[out] 	 : none
+ * return 		 : none
+ *******************************************************************************/
+static void tcp_server_conn_close(tcp_connection_t* conn)
+{
+    if (conn)
+    {
+        uv_read_stop((uv_stream_t*)conn->session);
+        if (!uv_is_closing((uv_handle_t*)conn->session))
+        {
+            char addr[128] = { 0 };
+            dzlog_info("tcp server close connection : %s", tcp_server_get_client_addr(conn, addr, 127));
+            uv_close((uv_handle_t*)conn->session, on_close_connection);
+        }
+    }
+}
+
+static void close(tcp_server_t* tcp_server)
+{
+    if (!tcp_server)
+    {
+        return;
+    }
+
+    dzlog_debug("tcp_server_close");
+    if (!uv_is_closing((uv_handle_t*)&(tcp_server->server)))
+    {
+        uv_close((uv_handle_t*)(&(tcp_server->server)), on_close_server);
+    }
+
+    if (QUEUE_EMPTY(&(tcp_server->sessions)))
+    {
+        dzlog_debug("free tcp_server");
+        free(tcp_server);
+        return;
+    }
+
+    QUEUE* q = QUEUE_HEAD(&(tcp_server->sessions));
+    QUEUE_FOREACH(q, &(tcp_server->sessions))
+    {
+        dzlog_debug("tcp_server_close connection close");
+        tcp_connection_t* data = QUEUE_DATA(q, tcp_connection_t, node);
+        tcp_server_conn_close(data);
+    }
+}
+
+static void async_cb(uv_async_t* handle)
+{
+    tcp_server_t* tcp_server = handle->data;
+    if (!tcp_server)
+    {
+        return;
+    }
+    uv_close((uv_handle_t*)handle, NULL);
+    close(tcp_server);
 }
 
 /*******************************************************************************
@@ -163,6 +245,12 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
                              tcp_conn_on_close_func_t on_close, tcp_conn_on_error_func_t on_error,
                              tcp_conn_on_read_func_t on_data, tcp_conn_on_write_func_t on_send)
 {
+    if (!loop)
+    {
+        dzlog_error("tcp_server_run error: loop is NULL");
+        return NULL;
+    }
+
     int r                    = -1;
     tcp_server_t* tcp_server = (tcp_server_t*)calloc(1, sizeof(tcp_server_t));
     if (tcp_server)
@@ -171,16 +259,19 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
     }
     else
     {
-        dzlog_error("tcp_server_create error: tcp_server malloc error");
+        dzlog_error("tcp_server_run error: tcp_server malloc error");
         return NULL;
     }
 
+    uv_async_init(loop, &(tcp_server->async), async_cb);
+    tcp_server->async.data    = tcp_server;
     tcp_server->on_conn_open  = on_open;
     tcp_server->on_conn_close = on_close;
     tcp_server->on_conn_error = on_error;
     tcp_server->on_read       = on_data;
     tcp_server->on_write      = on_send;
     tcp_server->uvloop        = loop;
+    tcp_server->is_closing    = false;
     QUEUE_INIT(&(tcp_server->sessions));
 
     uv_tcp_t* server = &(tcp_server->server);
@@ -219,29 +310,8 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
  *******************************************************************************/
 void tcp_server_close(tcp_server_t* tcp_server)
 {
-    QUEUE* q = QUEUE_HEAD(&(tcp_server->sessions));
-    QUEUE_FOREACH(q, &(tcp_server->sessions))
-    {
-        tcp_connection_t* data = QUEUE_DATA(q, tcp_connection_t, node);
-        tcp_server_conn_close(data);
-    }
-    uv_close((uv_handle_t*)(&(tcp_server->server)), on_close_server);
-}
-
-/*******************************************************************************
- * function name : tcp_server_conn_close
- * description	 : close a tcp connection
- * param[in]     : conn
- * param[out] 	 : none
- * return 		 : none
- *******************************************************************************/
-void tcp_server_conn_close(tcp_connection_t* conn)
-{
-    if (conn)
-    {
-        uv_read_stop((uv_stream_t*)conn->session);
-        uv_close((uv_handle_t*)conn->session, on_close_connection);
-    }
+    tcp_server->is_closing = true;
+    uv_async_send(&(tcp_server->async));
 }
 
 /*******************************************************************************
@@ -253,6 +323,11 @@ void tcp_server_conn_close(tcp_connection_t* conn)
  *******************************************************************************/
 void tcp_server_print_all_conn(tcp_server_t* tcp_server)
 {
+    if (!tcp_server)
+    {
+        return;
+    }
+
     QUEUE* q = QUEUE_HEAD(&(tcp_server->sessions));
     QUEUE_FOREACH(q, &(tcp_server->sessions))
     {
@@ -271,6 +346,11 @@ void tcp_server_print_all_conn(tcp_server_t* tcp_server)
  *******************************************************************************/
 void tcp_server_send_data(tcp_connection_t* tcp_client, char* data, size_t size)
 {
+    if (!tcp_client || !data)
+    {
+        return;
+    }
+
     tcp_server_t* tcp_server = (tcp_server_t*)tcp_client->data;
     uv_write_t* write_req    = (uv_write_t*)malloc(sizeof(uv_write_t));
     if (write_req == NULL)
@@ -296,6 +376,11 @@ void tcp_server_send_data(tcp_connection_t* tcp_client, char* data, size_t size)
  *******************************************************************************/
 char* tcp_server_get_client_addr(tcp_connection_t* client, char* dst, size_t len)
 {
+    if (!client || !dst)
+    {
+        return NULL;
+    }
+
     struct sockaddr_storage peername;
     int namelen = sizeof(peername);
     int r       = uv_tcp_getpeername((uv_tcp_t*)(client->session), (struct sockaddr*)&peername, &namelen);
@@ -304,11 +389,41 @@ char* tcp_server_get_client_addr(tcp_connection_t* client, char* dst, size_t len
         if (peername.ss_family == AF_INET)
         {
             uv_ip4_name((const struct sockaddr_in*)&peername, dst, len);
+            sprintf(dst, "%s:%d", dst, ntohs(((const struct sockaddr_in*)&peername)->sin_port));
         }
         else
         {
             uv_ip6_name((const struct sockaddr_in6*)&peername, dst, len);
+            sprintf(dst, "%s:%d", dst, ntohs(((const struct sockaddr_in6*)&peername)->sin6_port));
         }
     }
     return dst;
+}
+
+void tcp_server_set_no_delay(tcp_server_t* tcp_server, bool enable)
+{
+    if (!tcp_server)
+    {
+        return;
+    }
+
+    int ret = uv_tcp_nodelay(&(tcp_server->server), enable);
+    if (ret)
+    {
+        dzlog_error("tcp_server_set_no_delay failed!");
+    }
+}
+
+void tcp_server_set_keepalive(tcp_server_t* tcp_server, bool enable, unsigned int delay)
+{
+    if (!tcp_server)
+    {
+        return;
+    }
+
+    int ret = uv_tcp_keepalive(&(tcp_server->server), enable, delay);
+    if (ret)
+    {
+        dzlog_error("tcp_server_set_keepalive failed!");
+    }
 }

@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 2.6)
 project(control_engine  C)
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Release")
+#  set(CMAKE_BUILD_TYPE "Release")
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 set(C_FLAGS

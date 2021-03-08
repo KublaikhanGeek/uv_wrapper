@@ -48,15 +48,11 @@ static void on_read(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf)
     else
     {
         dzlog_error("read data failed");
-        uv_read_stop(handle);
         if (tcp_client->on_conn_close)
         {
             tcp_client->on_conn_close(&(tcp_client->conn));
         }
-        uv_close((uv_handle_t*)handle, NULL);
-        free(tcp_client->connect_req);
-        free(tcp_client->conn.session);
-        free(tcp_client);
+        tcp_client_close(tcp_client);
     }
 }
 
@@ -90,9 +86,23 @@ static void on_close_connection(uv_handle_t* handle)
         tcp_client->on_conn_close(&(tcp_client->conn));
     }
 
-    free(tcp_client->connect_req);
-    free(tcp_client->conn.session);
-    free(tcp_client);
+    if (tcp_client->connect_req)
+    {
+        free(tcp_client->connect_req);
+        tcp_client->connect_req = NULL;
+    }
+
+    if (tcp_client->conn.session)
+    {
+        free(tcp_client->conn.session);
+        tcp_client->conn.session = NULL;
+    }
+
+    if (tcp_client)
+    {
+        free(tcp_client);
+        tcp_client = NULL;
+    }
 }
 
 static void on_client_write(uv_write_t* req, int status)
@@ -111,6 +121,7 @@ static void on_client_write(uv_write_t* req, int status)
     if (req)
     {
         free(req);
+        req = NULL;
     }
 }
 
@@ -204,6 +215,9 @@ void tcp_client_close(tcp_client_t* tcp_client)
     if (tcp_client && tcp_client->conn.session)
     {
         uv_read_stop((uv_stream_t*)tcp_client->conn.session);
-        uv_close((uv_handle_t*)tcp_client->conn.session, on_close_connection);
+        if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
+        {
+            uv_close((uv_handle_t*)tcp_client->conn.session, on_close_connection);
+        }
     }
 }

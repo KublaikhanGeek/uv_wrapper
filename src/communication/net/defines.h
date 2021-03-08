@@ -57,8 +57,10 @@ struct tcp_server_s
     const char* server_addr;
     int port;
     uv_loop_t* uvloop;
-    uv_tcp_t server; //服务句柄
-    int conn_count;  //当前链接总数
+    uv_tcp_t server;  // 服务句柄
+    uv_async_t async; // 事件通知句柄
+    int conn_count;   // 当前链接总数
+    bool is_closing;  // 停止标志
     char buf[MAX_BUF_LEN];
     QUEUE sessions; // queue of sessions
     CALLBACK_FIELDS

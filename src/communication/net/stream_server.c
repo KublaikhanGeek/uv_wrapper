@@ -251,7 +251,6 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
         return NULL;
     }
 
-    int r                    = -1;
     tcp_server_t* tcp_server = (tcp_server_t*)calloc(1, sizeof(tcp_server_t));
     if (tcp_server)
     {
@@ -259,7 +258,7 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
     }
     else
     {
-        dzlog_error("tcp_server_run error: tcp_server malloc error");
+        dzlog_error("tcp_server_run error: tcp_server malloc failed");
         return NULL;
     }
 
@@ -290,7 +289,7 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
 
     uv_tcp_bind(server, (const struct sockaddr*)&bind_addr, 0);
     server->data = tcp_server;
-    r            = uv_listen((uv_stream_t*)server, 5, on_new_connection);
+    int r        = uv_listen((uv_stream_t*)server, 5, on_new_connection);
     if (r)
     {
         dzlog_error("listen tcp server failed:%d\n", r);
@@ -310,6 +309,11 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
  *******************************************************************************/
 void tcp_server_close(tcp_server_t* tcp_server)
 {
+    if (!tcp_server)
+    {
+        return;
+    }
+
     tcp_server->is_closing = true;
     uv_async_send(&(tcp_server->async));
 }

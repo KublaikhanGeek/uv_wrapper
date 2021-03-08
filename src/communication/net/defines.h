@@ -45,6 +45,7 @@ struct tcp_connection_s
 struct tcp_client_s
 {
     uv_loop_t* uvloop;
+    uv_async_t async; // 事件通知句柄
     uv_connect_t* connect_req;
     tcp_connection_t conn;
     char buf[MAX_BUF_LEN];

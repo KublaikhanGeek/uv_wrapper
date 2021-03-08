@@ -1,5 +1,4 @@
 #include "zlog.h"
-#include "uv.h"
 #include "event_loop_thread.h"
 #include "stream_server.h"
 #include <unistd.h>
@@ -47,14 +46,14 @@ int main(int argc, char** argv)
 {
     pthread_t thread;
     int index = 0;
-    int rc    = dzlog_init("./zlog.conf", "test");
+    int rc    = dzlog_init("./zlog.conf", "tcp_server");
     if (rc)
     {
         printf("init zlog failed!\n");
         return -1;
     }
 
-    dzlog_info("======start");
+    dzlog_debug("======start");
 
     signal_init();
     event_thread_create(&thread, NULL, tread_run, NULL);
@@ -69,6 +68,6 @@ int main(int argc, char** argv)
         ++index;
     }
 
-    event_thread_stop(thread);
+    event_thread_join(thread);
     zlog_fini();
 }

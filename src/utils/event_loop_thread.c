@@ -1,6 +1,6 @@
 #include "event_loop_thread.h"
 #include "uv.h"
-//#include "uv_wrapper.h"
+#include "uv_wrapper.h"
 #include <stdlib.h>
 #include "zlog.h"
 
@@ -56,7 +56,7 @@ int event_thread_create(pthread_t* thread, const pthread_attr_t* attr, void* (*s
     return pthread_create(thread, attr, event_thread, args);
 }
 
-void event_thread_stop(pthread_t thread)
+void event_thread_join(pthread_t thread)
 {
     pthread_join(thread, NULL);
 }

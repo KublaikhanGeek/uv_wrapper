@@ -16,6 +16,7 @@
 
 #include "stream_client.h"
 
+static void close(tcp_client_t* tcp_client);
 /*
  功能： 工具函数，用于接收数据时分配存储数据的内存的回调函数
  参数：
@@ -52,7 +53,11 @@ static void on_read(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf)
         {
             tcp_client->on_conn_close(&(tcp_client->conn));
         }
-        tcp_client_close(tcp_client);
+
+        if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
+        {
+            uv_close((uv_handle_t*)tcp_client->conn.session, NULL);
+        }
     }
 }
 
@@ -66,6 +71,8 @@ static void on_connect(uv_connect_t* req, int status)
         {
             tcp_client->on_conn_error(&(tcp_client->conn), "error connect to remote");
         }
+
+        return;
     }
     else
     {
@@ -78,31 +85,28 @@ static void on_connect(uv_connect_t* req, int status)
     uv_read_start(req->handle, alloc_buffer, on_read);
 }
 
-static void on_close_connection(uv_handle_t* handle)
+static void free_resource(tcp_client_t* tcp_client)
 {
-    tcp_client_t* tcp_client = (tcp_client_t*)handle->data;
-    if (tcp_client->on_conn_close)
-    {
-        tcp_client->on_conn_close(&(tcp_client->conn));
-    }
-
     if (tcp_client->connect_req)
     {
         free(tcp_client->connect_req);
-        tcp_client->connect_req = NULL;
     }
 
     if (tcp_client->conn.session)
     {
         free(tcp_client->conn.session);
-        tcp_client->conn.session = NULL;
     }
 
     if (tcp_client)
     {
         free(tcp_client);
-        tcp_client = NULL;
     }
+}
+
+static void on_close_connection(uv_handle_t* handle)
+{
+    tcp_client_t* tcp_client = (tcp_client_t*)handle->data;
+    free_resource(tcp_client);
 }
 
 static void on_client_write(uv_write_t* req, int status)
@@ -125,6 +129,37 @@ static void on_client_write(uv_write_t* req, int status)
     }
 }
 
+static void close(tcp_client_t* tcp_client)
+{
+    if (tcp_client && tcp_client->conn.session)
+    {
+        if (tcp_client->on_conn_close)
+        {
+            tcp_client->on_conn_close(&(tcp_client->conn));
+        }
+
+        uv_read_stop((uv_stream_t*)tcp_client->conn.session);
+        if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
+        {
+            uv_close((uv_handle_t*)tcp_client->conn.session, on_close_connection);
+        }
+        else
+        {
+            free_resource(tcp_client);
+        }
+    }
+}
+
+static void async_cb(uv_async_t* handle)
+{
+    tcp_client_t* tcp_client = handle->data;
+    if (!tcp_client)
+    {
+        return;
+    }
+    uv_close((uv_handle_t*)handle, NULL);
+    close(tcp_client);
+}
 /*******************************************************************************
  * function name : tcp_client_run
  * description	 : start a tcp client
@@ -133,12 +168,23 @@ static void on_client_write(uv_write_t* req, int status)
  * return 		 : tcp_client_t handle
  *******************************************************************************/
 tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t* loop, tcp_conn_on_open_func_t on_open,
-                             tcp_conn_on_read_func_t on_data, tcp_conn_on_close_func_t on_close,
-                             tcp_conn_on_error_func_t on_error, tcp_conn_on_write_func_t on_send)
+                             tcp_conn_on_close_func_t on_close, tcp_conn_on_error_func_t on_error,
+                             tcp_conn_on_read_func_t on_data, tcp_conn_on_write_func_t on_send)
 {
-    tcp_client_t* tcp_client = (tcp_client_t*)calloc(1, sizeof(tcp_client_t));
-    if (tcp_client == NULL)
+    if (!loop)
     {
+        dzlog_error("tcp_server_run error: loop is NULL");
+        return NULL;
+    }
+
+    tcp_client_t* tcp_client = (tcp_client_t*)calloc(1, sizeof(tcp_client_t));
+    if (tcp_client)
+    {
+        memset(tcp_client, 0, sizeof(tcp_client_t));
+    }
+    else
+    {
+        dzlog_error("tcp_client_run error: tcp_client malloc failed");
         return NULL;
     }
 
@@ -156,10 +202,12 @@ tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t
         free(tcp_client);
         return NULL;
     }
+    uv_async_init(loop, &(tcp_client->async), async_cb);
+    tcp_client->async.data    = tcp_client;
     tcp_client->on_conn_open  = on_open;
-    tcp_client->on_read       = on_data;
     tcp_client->on_conn_close = on_close;
     tcp_client->on_conn_error = on_error;
+    tcp_client->on_read       = on_data;
     tcp_client->on_write      = on_send;
     tcp_client->conn.data     = tcp_client;
 
@@ -181,13 +229,19 @@ tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t
 /*******************************************************************************
  * function name : tcp_client_send_data
  * description	 : send data
- * param[in]     : tcp_client; data; size
+ * param[in]     : conn; data; size
  * param[out] 	 : none
  * return 		 : none
  *******************************************************************************/
-void tcp_client_send_data(tcp_client_t* tcp_client, char* data, size_t size)
+void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size)
 {
-    uv_write_t* write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+    if (!conn || !data)
+    {
+        return;
+    }
+
+    tcp_client_t* tcp_client = (tcp_client_t*)conn->data;
+    uv_write_t* write_req    = (uv_write_t*)malloc(sizeof(uv_write_t));
     if (write_req == NULL)
     {
         if (tcp_client->on_conn_error)
@@ -199,8 +253,8 @@ void tcp_client_send_data(tcp_client_t* tcp_client, char* data, size_t size)
     }
 
     uv_buf_t buf    = uv_buf_init(data, (unsigned int)size);
-    write_req->data = tcp_client;
-    uv_write(write_req, (uv_stream_t*)tcp_client->conn.session, &buf, 1, on_client_write);
+    write_req->data = conn->data;
+    uv_write(write_req, (uv_stream_t*)conn->session, &buf, 1, on_client_write);
 }
 
 /*******************************************************************************
@@ -212,12 +266,10 @@ void tcp_client_send_data(tcp_client_t* tcp_client, char* data, size_t size)
  *******************************************************************************/
 void tcp_client_close(tcp_client_t* tcp_client)
 {
-    if (tcp_client && tcp_client->conn.session)
+    if (!tcp_client)
     {
-        uv_read_stop((uv_stream_t*)tcp_client->conn.session);
-        if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
-        {
-            uv_close((uv_handle_t*)tcp_client->conn.session, on_close_connection);
-        }
+        return;
     }
+
+    uv_async_send(&(tcp_client->async));
 }

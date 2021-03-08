@@ -11,3 +11,6 @@ target_link_libraries(tcp_server communication utils uv zlog pthread)
 
 add_executable(tcp_client tcp_client.c)
 target_link_libraries(tcp_client communication utils uv zlog pthread)
+
+add_executable(tcp_server_client tcp_server_client.c)
+target_link_libraries(tcp_server_client communication utils uv zlog pthread)

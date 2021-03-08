@@ -42,7 +42,7 @@ void on_conn_error(tcp_connection_t* conn, const char* msg)
 
 void on_read(tcp_connection_t* conn, void* data, size_t len)
 {
-    dzlog_info("receive message: %s from server", (char*)data);
+    dzlog_info("[client] receive message: %s from server", (char*)data);
 }
 
 void* tread_run(void* arg)

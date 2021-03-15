@@ -2,7 +2,7 @@
  * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
  * All rights reserved.
  *******************************************************************************
- * File name     : dgram_client.h
+ * File name     : tcp_client.h
  * Description   :
  * Version       : v1.0
  * Create Time   : 2021/2/25
@@ -13,9 +13,15 @@
  * ------------------------------------------------------------------------------
  *
  *******************************************************************************/
-#ifndef DGRAM_CLIENT_H
-#define DGRAM_CLIENT_H
+#ifndef TCP_CLIENT_H_
+#define TCP_CLIENT_H_
 
-extern void dgram_client_create(const char* server_addr, int server_port, const char* name);
+#include "defines.h"
+
+extern tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t* loop, tcp_conn_on_open_func_t,
+                                    tcp_conn_on_close_func_t, tcp_conn_on_error_func_t, tcp_conn_on_read_func_t,
+                                    tcp_conn_on_write_func_t);
+extern void tcp_client_close(tcp_client_t* tcp_client);
+extern void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size);
 
 #endif

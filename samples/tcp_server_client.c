@@ -1,7 +1,7 @@
 #include "zlog.h"
 #include "event_loop_thread.h"
-#include "stream_server.h"
-#include "stream_client.h"
+#include "tcp_server.h"
+#include "tcp_client.h"
 #include <unistd.h>
 
 static int stop          = 0;
@@ -61,7 +61,7 @@ void on_read_client(tcp_connection_t* conn, void* data, size_t len)
     dzlog_info("[client] receive message: %s from server", (char*)data);
 }
 
-void* tread_run(void* arg)
+void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
     tcp_server   = tcp_server_run("0.0.0.0", 7000, args->loop, on_conn, NULL, NULL, on_read, NULL);
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
     dzlog_debug("======start");
 
     signal_init();
-    event_thread_create(&thread, NULL, tread_run, NULL);
+    event_thread_create(&thread, thread_run, NULL);
 
     char* data = "hello, server! I am tcp_server_client";
     while (0 == stop)

@@ -20,6 +20,8 @@ static void* event_thread(void* arg)
     {
         args->func(arg);
     }
+
+    dzlog_debug("event_loop ---start---");
     uv_run(args->loop, UV_RUN_DEFAULT);
 
     /* cleanup */
@@ -34,7 +36,7 @@ static void* event_thread(void* arg)
     return NULL;
 }
 
-int event_thread_create(pthread_t* thread, const pthread_attr_t* attr, void* (*start_routine)(void*), void* arg)
+int event_thread_create(pthread_t* thread, void* (*start_routine)(void*), void* arg)
 {
     args_t* args = (args_t*)malloc(sizeof(args_t));
     if (!args)
@@ -53,10 +55,10 @@ int event_thread_create(pthread_t* thread, const pthread_attr_t* attr, void* (*s
     args->func = start_routine;
     args->arg  = arg;
     args->loop = loop;
-    return pthread_create(thread, attr, event_thread, args);
+    return uv_thread_create(thread, event_thread, args);
 }
 
 void event_thread_join(pthread_t thread)
 {
-    pthread_join(thread, NULL);
+    uv_thread_join(thread);
 }

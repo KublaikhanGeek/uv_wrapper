@@ -1,21 +1,26 @@
 #include "zlog.h"
 #include "event_loop_thread.h"
-#include "stream_client.h"
+#include "tcp_client.h"
 #include <unistd.h>
 
 static int stop          = 0;
 tcp_client_t* tcp_client = NULL;
 static int conn_status   = 0;
+pthread_t id[5];
+char* thread_info[5] = { "000000000000", "1111111111111", "2222222222222", "333333333333", "444444444444" };
 
+char* data = "hello, server\\n";
 void signal_handle(int num)
 {
     dzlog_info("get a signal[%d]\n", num);
-    tcp_client_close(tcp_client);
     stop = 1;
+    sleep(3);
+    tcp_client_close(tcp_client);
 }
 
 void signal_init()
 {
+    signal(SIGPIPE, SIG_IGN);
     // ctr+c
     signal(SIGINT, signal_handle);
     // kill
@@ -43,6 +48,7 @@ void on_conn_error(tcp_connection_t* conn, const char* msg)
 void on_read(tcp_connection_t* conn, void* data, size_t len)
 {
     dzlog_info("[client] receive message: %s from server", (char*)data);
+    tcp_client_send_data(conn, data, len);
 }
 
 void* tread_run(void* arg)
@@ -51,6 +57,29 @@ void* tread_run(void* arg)
     tcp_client   = tcp_client_run("127.0.0.1", 7000, args->loop, on_conn, on_conn_close, on_conn_error, on_read, NULL);
 
     return NULL;
+}
+
+void* thread_send(void* args)
+{
+    int i = 0;
+    while (0 == stop)
+    {
+        if (conn_status == 1)
+        {
+            // if (strcmp(args, "000000000000") == 0)
+            {
+                dzlog_debug("[%s----0x%x] [%d] send data --start--", (char*)args, pthread_self(), i);
+            }
+
+            tcp_client_send_data(&(tcp_client->conn), data, strlen(data) + 1);
+            // if (strcmp(args, "000000000000") == 0)
+            {
+                dzlog_debug("[%s----0x%x] [%d] send data --end--", (char*)args, pthread_self(), i);
+            }
+            ++i;
+        }
+        sleep(1);
+    }
 }
 
 int main(int argc, char** argv)
@@ -66,23 +95,17 @@ int main(int argc, char** argv)
     dzlog_debug("======start");
 
     signal_init();
-    event_thread_create(&thread, NULL, tread_run, NULL);
+    event_thread_create(&thread, tread_run, NULL);
 
-    int index  = 0;
-    char* data = "hello, server";
-    while (0 == stop)
+    for (size_t i = 0; i < 5; i++)
     {
-        sleep(1);
-        if (0 == (index % 5))
-        {
-            if (conn_status == 1)
-            {
-                tcp_client_send_data(&(tcp_client->conn), data, strlen(data) + 1);
-            }
-        }
-        ++index;
+        pthread_create(&id[i], NULL, thread_send, thread_info[i]);
     }
 
     event_thread_join(thread);
+    for (size_t i = 0; i < 5; i++)
+    {
+        pthread_join(id[i], NULL);
+    }
     zlog_fini();
 }

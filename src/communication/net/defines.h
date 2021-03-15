@@ -19,9 +19,15 @@
 typedef struct tcp_client_s tcp_client_t;
 typedef struct tcp_server_s tcp_server_t;
 typedef struct tcp_connection_s tcp_connection_t;
-typedef struct tcp_send_data_cb_s tcp_send_data_cb_t;
+typedef struct udp_socket_s udp_socket_t;
 
-/* 服务端事件回调 */
+/* udp事件回调 */
+typedef void (*udp_handle_on_data_func_t)(udp_socket_t* handle, const struct sockaddr* peer, void* data,
+                                          size_t len);                                // udp数据读取回调函数
+typedef void (*udp_handle_on_send_func_t)(udp_socket_t* handle, int status);          // udp发送数据回调函数
+typedef void (*udp_handle_on_error_func_t)(udp_socket_t* handle, const char* errmsg); //错误回调函数
+
+/* tcp事件回调 */
 typedef void (*tcp_conn_on_open_func_t)(tcp_connection_t* conn);  // tcp链接创建的回调函数
 typedef void (*tcp_conn_on_close_func_t)(tcp_connection_t* conn); // tcp链接关闭的回调函数
 typedef void (*tcp_conn_on_read_func_t)(tcp_connection_t* conn, void* data, size_t len); // tcp数据读取回调函数
@@ -38,16 +44,21 @@ typedef enum
 struct tcp_connection_s
 {
     uv_tcp_t* session;
-    void* data;
+    void* data;  // 一般指向父结构，例如tcp_client_t或tcp_server_t
+    void* data2; // 一般用于发送数据等其他数据
     QUEUE node;
 };
 
 struct tcp_client_s
 {
     uv_loop_t* uvloop;
-    uv_async_t async; // 事件通知句柄
+    uv_async_t async_close; // 关闭客户端事件通知句柄
+    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_mutex_t mutex;
+    uv_sem_t sem;
     uv_connect_t* connect_req;
     tcp_connection_t conn;
+    uv_thread_t thread_id;
     char buf[MAX_BUF_LEN];
     CALLBACK_FIELDS
 };
@@ -58,13 +69,37 @@ struct tcp_server_s
     const char* server_addr;
     int port;
     uv_loop_t* uvloop;
-    uv_tcp_t server;  // 服务句柄
-    uv_async_t async; // 事件通知句柄
-    int conn_count;   // 当前链接总数
-    bool is_closing;  // 停止标志
+    uv_tcp_t server;        // 服务句柄
+    uv_async_t async_close; // 关闭客户端事件通知句柄
+    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_mutex_t mutex;
+    uv_sem_t sem;
+    uv_thread_t thread_id;
+    int conn_count;  // 当前链接总数
+    bool is_closing; // 停止标志
     char buf[MAX_BUF_LEN];
     QUEUE sessions; // queue of sessions
     CALLBACK_FIELDS
+};
+
+struct udp_socket_s
+{
+    uv_loop_t* uvloop;
+    uv_udp_t udp;           // udp的uv实例
+    uv_async_t async_close; // 关闭客户端事件通知句
+    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_mutex_t mutex;
+    uv_sem_t sem;
+    uv_thread_t thread_id;
+    struct sockaddr send_addr;
+    void* data1; //公共数据
+    void* data2; //公共数据
+    char buf[MAX_BUF_LEN];
+
+    //各个回调函数
+    udp_handle_on_data_func_t on_data;
+    udp_handle_on_send_func_t on_send;
+    udp_handle_on_error_func_t on_error;
 };
 
 #endif

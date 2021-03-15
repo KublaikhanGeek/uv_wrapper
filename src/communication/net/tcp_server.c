@@ -2,7 +2,7 @@
  * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
  * All rights reserved.
  *******************************************************************************
- * File name     : stream_server.c
+ * File name     : tcp_server.c
  * Description   :
  * Version       : v1.0
  * Create Time   : 2021/2/25
@@ -13,14 +13,15 @@
  * ------------------------------------------------------------------------------
  *
  *******************************************************************************/
-#include "stream_server.h"
+#include "tcp_server.h"
 
 static void on_new_connection(uv_stream_t* server, int status);
 static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf);
 static void on_client_write(uv_write_t* req, int status);
 static void on_close_connection(uv_handle_t* handle);
 static void on_close_server(uv_handle_t* handle);
-static void async_cb(uv_async_t* handle);
+static void async_close_cb(uv_async_t* handle);
+static void async_send_cb(uv_async_t* handle);
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff);
 static void tcp_server_conn_close(tcp_connection_t* conn);
 static void close(tcp_server_t* tcp_server);
@@ -35,6 +36,7 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
 
 static void on_client_write(uv_write_t* req, int status)
 {
+    tcp_server_t* tcp_server = (tcp_server_t*)req->data;
     if (status < 0)
     {
         dzlog_error("Write error!");
@@ -43,6 +45,9 @@ static void on_client_write(uv_write_t* req, int status)
     {
         free(req);
     }
+
+    dzlog_debug("on_client_write");
+    uv_sem_post(&(tcp_server->sem));
 }
 
 static void on_close_connection(uv_handle_t* handle)
@@ -139,11 +144,11 @@ static void on_new_connection(uv_stream_t* server, int status)
         {
             conn = true;
 
-            tcp_client->data    = tcp_server;
-            tcp_client->session = client;
+            tcp_client->data          = tcp_server;
+            tcp_client->session       = client;
+            tcp_client->session->data = tcp_client;
             QUEUE_INIT(&(tcp_client->node));
             QUEUE_INSERT_TAIL(&(tcp_server->sessions), &(tcp_client->node));
-            client->data = tcp_client;
             tcp_server->conn_count++; //服务连接数
             if (tcp_server->on_conn_open)
             {
@@ -223,7 +228,7 @@ static void close(tcp_server_t* tcp_server)
     }
 }
 
-static void async_cb(uv_async_t* handle)
+static void async_close_cb(uv_async_t* handle)
 {
     tcp_server_t* tcp_server = handle->data;
     if (!tcp_server)
@@ -232,6 +237,31 @@ static void async_cb(uv_async_t* handle)
     }
     uv_close((uv_handle_t*)handle, NULL);
     close(tcp_server);
+}
+
+static void send_data(tcp_connection_t* conn)
+{
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
+    uv_write_t* write_req    = (uv_write_t*)malloc(sizeof(uv_write_t));
+    if (write_req == NULL)
+    {
+        if (tcp_server->on_conn_error)
+        {
+            tcp_server->on_conn_error(conn, "allocate memory failed");
+        }
+        dzlog_error("allocate  memory failed");
+        uv_sem_post(&(tcp_server->sem));
+        return;
+    }
+
+    write_req->data = tcp_server;
+    uv_write(write_req, (uv_stream_t*)conn->session, conn->data2, 1, on_client_write);
+}
+
+static void async_send_cb(uv_async_t* handle)
+{
+    tcp_connection_t* conn = (tcp_connection_t*)handle->data;
+    send_data(conn);
 }
 
 /*******************************************************************************
@@ -262,15 +292,20 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
         return NULL;
     }
 
-    uv_async_init(loop, &(tcp_server->async), async_cb);
-    tcp_server->async.data    = tcp_server;
-    tcp_server->on_conn_open  = on_open;
-    tcp_server->on_conn_close = on_close;
-    tcp_server->on_conn_error = on_error;
-    tcp_server->on_read       = on_data;
-    tcp_server->on_write      = on_send;
-    tcp_server->uvloop        = loop;
-    tcp_server->is_closing    = false;
+    uv_sem_init(&(tcp_server->sem), 0);
+    uv_mutex_init(&(tcp_server->mutex));
+    uv_async_init(loop, &(tcp_server->async_close), async_close_cb);
+    uv_async_init(loop, &(tcp_server->async_send), async_send_cb);
+    tcp_server->async_close.data = tcp_server;
+    tcp_server->async_send.data  = tcp_server;
+    tcp_server->on_conn_open     = on_open;
+    tcp_server->on_conn_close    = on_close;
+    tcp_server->on_conn_error    = on_error;
+    tcp_server->on_read          = on_data;
+    tcp_server->on_write         = on_send;
+    tcp_server->uvloop           = loop;
+    tcp_server->is_closing       = false;
+    tcp_server->thread_id        = uv_thread_self();
     QUEUE_INIT(&(tcp_server->sessions));
 
     uv_tcp_t* server = &(tcp_server->server);
@@ -315,7 +350,10 @@ void tcp_server_close(tcp_server_t* tcp_server)
     }
 
     tcp_server->is_closing = true;
-    uv_async_send(&(tcp_server->async));
+    uv_mutex_destroy(&(tcp_server->mutex));
+    uv_sem_destroy(&(tcp_server->sem));
+    uv_close((uv_handle_t*)&(tcp_server->async_send), NULL);
+    uv_async_send(&(tcp_server->async_close));
 }
 
 /*******************************************************************************
@@ -341,6 +379,21 @@ void tcp_server_print_all_conn(tcp_server_t* tcp_server)
     }
 }
 
+void tcp_server_send_data_2_all(tcp_server_t* tcp_server, char* data, size_t size)
+{
+    if (!tcp_server)
+    {
+        return;
+    }
+
+    QUEUE* q = QUEUE_HEAD(&(tcp_server->sessions));
+    QUEUE_FOREACH(q, &(tcp_server->sessions))
+    {
+        tcp_connection_t* conn = QUEUE_DATA(q, tcp_connection_t, node);
+        tcp_server_send_data(conn, data, size);
+    }
+}
+
 /*******************************************************************************
  * function name : tcp_server_send_data
  * description	 : send data
@@ -356,19 +409,24 @@ void tcp_server_send_data(tcp_connection_t* tcp_client, char* data, size_t size)
     }
 
     tcp_server_t* tcp_server = (tcp_server_t*)tcp_client->data;
-    uv_write_t* write_req    = (uv_write_t*)malloc(sizeof(uv_write_t));
-    if (write_req == NULL)
+    if (tcp_server->thread_id == uv_thread_self())
     {
-        if (tcp_server->on_conn_error)
-        {
-            tcp_server->on_conn_error(tcp_client, "allocate memory failed");
-        }
-        dzlog_error("allocate  memory failed");
-        return;
+        dzlog_debug("send data sync");
+        uv_buf_t buf      = uv_buf_init(data, (unsigned int)size);
+        tcp_client->data2 = &buf;
+        send_data(tcp_client);
     }
-
-    uv_buf_t buf = uv_buf_init(data, (unsigned int)size);
-    uv_write(write_req, (uv_stream_t*)tcp_client->session, &buf, 1, on_client_write);
+    else
+    {
+        dzlog_debug("send data async");
+        uv_mutex_lock(&(tcp_server->mutex));
+        uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
+        tcp_client->data2           = &buf;
+        tcp_server->async_send.data = tcp_client;
+        uv_async_send(&(tcp_server->async_send));
+        uv_sem_wait(&(tcp_server->sem));
+        uv_mutex_unlock(&(tcp_server->mutex));
+    }
 }
 
 /*******************************************************************************

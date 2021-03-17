@@ -51,7 +51,7 @@ void on_read(udp_socket_t* handle, const struct sockaddr* peer, void* data, size
 void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create("0.0.0.0", 8000, args->loop, on_read, NULL, on_error);
+    udp_handle   = udp_handle_run("0.0.0.0", 8000, args->loop, on_read, NULL, on_error);
 
     udp_set_membership(udp_handle, "224.0.0.88", "0.0.0.0", true);
     udp_set_multicast_loop(udp_handle, true);
@@ -74,8 +74,8 @@ int main(int argc, char** argv)
     signal_init();
     event_thread_create(&thread, thread_run, NULL);
 
-    int index  = 1;
-    char* data = "hello, server";
+    int index = 1;
+    // const char* data = "hello, server";
     while (0 == stop)
     {
         sleep(1);
@@ -84,7 +84,7 @@ int main(int argc, char** argv)
             if (udp_handle)
             {
                 dzlog_debug("send message");
-                //                udp_send_data_ip(udp_handle, data, strlen(data) + 1, "192.168.79.1", 7000);
+                //                udp_send_data_ip(udp_handle, (char*)data, strlen(data) + 1, "192.168.79.1", 7000);
             }
         }
         ++index;

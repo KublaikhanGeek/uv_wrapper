@@ -49,7 +49,7 @@ void on_read(udp_socket_t* handle, const struct sockaddr* peer, void* data, size
 void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create("127.0.0.1", 7000, args->loop, on_read, NULL, on_error);
+    udp_handle   = udp_handle_run("127.0.0.1", 7000, args->loop, on_read, NULL, on_error);
 
     return NULL;
 }
@@ -69,8 +69,7 @@ int main(int argc, char** argv)
     signal_init();
     event_thread_create(&thread, thread_run, NULL);
 
-    int index  = 1;
-    char* data = "hello, server";
+    int index = 1;
     while (0 == stop)
     {
         sleep(1);

@@ -5,7 +5,7 @@
 
 static int stop          = 0;
 tcp_server_t* tcp_server = NULL;
-char* data               = "server to client data";
+const char* message      = "server to client data";
 
 void signal_handle(int num)
 {
@@ -56,9 +56,11 @@ void* thread_send_data(void* arg)
         sleep(1);
         if (tcp_server)
         {
-            tcp_server_send_data_2_all(tcp_server, data, strlen(data) + 1);
+            tcp_server_send_data_2_all(tcp_server, (char*)message, strlen(message) + 1);
         }
     }
+
+    return NULL;
 }
 
 int main(int argc, char** argv)

@@ -17,14 +17,7 @@
 #include "tcp_client.h"
 
 static void close(tcp_client_t* tcp_client);
-/*
- 功能： 工具函数，用于接收数据时分配存储数据的内存的回调函数
- 参数：
- *  handle: libuv的句柄，一般情况不适用
- *  suggested_size：建议分配的内存大小
- *  buff：返回结果
- 返回结果：无
- */
+
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
     tcp_client_t* tcp_client = (tcp_client_t*)handle->data;
@@ -130,7 +123,7 @@ static void on_client_write(uv_write_t* req, int status)
         free(req);
     }
 
-    dzlog_debug("[0x%x] on_client_write", uv_thread_self());
+    dzlog_debug("[0x%lx] on_client_write", uv_thread_self());
     if (tcp_client->conn.async_send_flag)
     {
         uv_sem_post(&(tcp_client->sem));
@@ -202,6 +195,7 @@ static void async_send_cb(uv_async_t* handle)
     tcp_connection_t* conn = (tcp_connection_t*)handle->data;
     send_data(conn);
 }
+
 /*******************************************************************************
  * function name : tcp_client_run
  * description	 : start a tcp client
@@ -290,7 +284,7 @@ void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size)
     tcp_client_t* tcp_client = (tcp_client_t*)conn->data;
     if (tcp_client->thread_id == uv_thread_self())
     {
-        dzlog_debug("[0x%x] tcp_client_send_data in loop", uv_thread_self());
+        dzlog_debug("[0x%lx] tcp_client_send_data in loop", uv_thread_self());
         conn->async_send_flag = false;
         uv_buf_t buf          = uv_buf_init(data, (unsigned int)size);
         conn->data2           = &buf;
@@ -299,14 +293,14 @@ void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size)
     else
     {
         uv_mutex_lock(&(tcp_client->mutex));
-        dzlog_debug("[0x%x] tcp_client_send_data async start", uv_thread_self());
+        dzlog_debug("[0x%lx] tcp_client_send_data async start", uv_thread_self());
         conn->async_send_flag       = true;
         uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
         conn->data2                 = &buf;
         tcp_client->async_send.data = conn;
         uv_async_send(&(tcp_client->async_send));
         uv_sem_wait(&(tcp_client->sem));
-        dzlog_debug("[0x%x] tcp_client_send_data async end", uv_thread_self());
+        dzlog_debug("[0x%lx] tcp_client_send_data async end", uv_thread_self());
         uv_mutex_unlock(&(tcp_client->mutex));
     }
 }

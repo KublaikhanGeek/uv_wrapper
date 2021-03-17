@@ -89,7 +89,7 @@ int main(int argc, char** argv)
     signal_init();
     event_thread_create(&thread, thread_run, NULL);
 
-    char* data = "hello, server! I am tcp_server_client";
+    const char* data = "hello, server! I am tcp_server_client";
     while (0 == stop)
     {
         sleep(1);
@@ -98,7 +98,7 @@ int main(int argc, char** argv)
             tcp_server_print_all_conn(tcp_server);
             if (conn_status == 1)
             {
-                tcp_client_send_data(&(tcp_client->conn), data, strlen(data) + 1);
+                tcp_client_send_data(&(tcp_client->conn), (char*)data, strlen(data) + 1);
             }
         }
         ++index;

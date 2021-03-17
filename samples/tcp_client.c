@@ -7,9 +7,9 @@ static int stop          = 0;
 tcp_client_t* tcp_client = NULL;
 static int conn_status   = 0;
 pthread_t id[5];
-char* thread_info[5] = { "000000000000", "1111111111111", "2222222222222", "333333333333", "444444444444" };
+const char* thread_info[5] = { "000000000000", "1111111111111", "2222222222222", "333333333333", "444444444444" };
 
-char* data = "hello, server\\n";
+const char* message = "hello, server\\n";
 void signal_handle(int num)
 {
     dzlog_info("get a signal[%d]\n", num);
@@ -68,18 +68,20 @@ void* thread_send(void* args)
         {
             // if (strcmp(args, "000000000000") == 0)
             {
-                dzlog_debug("[%s----0x%x] [%d] send data --start--", (char*)args, pthread_self(), i);
+                dzlog_debug("[%s----0x%lx] [%d] send data --start--", (char*)args, pthread_self(), i);
             }
 
-            tcp_client_send_data(&(tcp_client->conn), data, strlen(data) + 1);
+            tcp_client_send_data(&(tcp_client->conn), (char*)message, strlen(message) + 1);
             // if (strcmp(args, "000000000000") == 0)
             {
-                dzlog_debug("[%s----0x%x] [%d] send data --end--", (char*)args, pthread_self(), i);
+                dzlog_debug("[%s----0x%lx] [%d] send data --end--", (char*)args, pthread_self(), i);
             }
             ++i;
         }
         sleep(1);
     }
+
+    return NULL;
 }
 
 int main(int argc, char** argv)
@@ -99,7 +101,7 @@ int main(int argc, char** argv)
 
     for (size_t i = 0; i < 5; i++)
     {
-        pthread_create(&id[i], NULL, thread_send, thread_info[i]);
+        pthread_create(&id[i], NULL, thread_send, (void*)thread_info[i]);
     }
 
     event_thread_join(thread);

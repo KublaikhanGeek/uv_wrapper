@@ -47,7 +47,7 @@ static void on_conn_write(uv_write_t* req, int status)
         free(req);
     }
 
-    dzlog_debug("[0x%x] on_conn_write", uv_thread_self());
+    dzlog_debug("[0x%lx] on_conn_write", uv_thread_self());
     if (conn->async_send_flag)
     {
         uv_sem_post(&(tcp_server->sem));
@@ -434,7 +434,7 @@ void tcp_server_send_data(tcp_connection_t* conn, char* data, size_t size)
     tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
     if (tcp_server->thread_id == uv_thread_self())
     {
-        dzlog_debug("[0x%x] send data sync", uv_thread_self());
+        dzlog_debug("[0x%lx] send data sync", uv_thread_self());
         conn->async_send_flag = false;
         uv_buf_t buf          = uv_buf_init(data, (unsigned int)size);
         conn->data2           = &buf;
@@ -443,14 +443,14 @@ void tcp_server_send_data(tcp_connection_t* conn, char* data, size_t size)
     else
     {
         uv_mutex_lock(&(tcp_server->mutex));
-        dzlog_debug("[0x%x] send data async start", uv_thread_self());
+        dzlog_debug("[0x%lx] send data async start", uv_thread_self());
         conn->async_send_flag       = true;
         uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
         conn->data2                 = &buf;
         tcp_server->async_send.data = conn;
         uv_async_send(&(tcp_server->async_send));
         uv_sem_wait(&(tcp_server->sem));
-        dzlog_debug("[0x%x] send data async end", uv_thread_self());
+        dzlog_debug("[0x%lx] send data async end", uv_thread_self());
         uv_mutex_unlock(&(tcp_server->mutex));
     }
 }

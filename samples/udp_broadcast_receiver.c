@@ -50,7 +50,7 @@ void on_read(udp_socket_t* handle, const struct sockaddr* peer, void* data, size
 void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create("0.0.0.0", 9000, args->loop, on_read, NULL, on_error);
+    udp_handle   = udp_handle_run("0.0.0.0", 9000, args->loop, on_read, NULL, on_error);
 
     return NULL;
 }

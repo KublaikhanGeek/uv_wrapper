@@ -6,7 +6,7 @@
 static int stop          = 0;
 udp_socket_t* udp_handle = NULL;
 pthread_t id[5];
-char* msg = "hello, server";
+const char* msg_str = "hello, server";
 
 void signal_handle(int num)
 {
@@ -52,17 +52,16 @@ void on_read(udp_socket_t* handle, const struct sockaddr* peer, void* data, size
 
 void* thread_run(void* arg)
 {
-    dzlog_debug("[0x%x] thread_run", pthread_self());
+    dzlog_debug("[0x%lx] thread_run", pthread_self());
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create(NULL, 0, args->loop, on_read, NULL, on_error);
+    udp_handle   = udp_handle_run(NULL, 0, args->loop, on_read, NULL, on_error);
 
     return NULL;
 }
 
 void* thread_send(void* args)
 {
-    int index  = 0;
-    char* data = "hello, server";
+    int index = 0;
     while (0 == stop)
     {
         sleep(1);
@@ -70,12 +69,14 @@ void* thread_send(void* args)
         {
             if (udp_handle)
             {
-                dzlog_debug("[0x%x] send data ", pthread_self());
-                udp_send_data_ip(udp_handle, msg, strlen(msg) + 1, "127.0.0.1", 7000);
+                dzlog_debug("[0x%lx] send data ", pthread_self());
+                udp_send_data_ip(udp_handle, (char*)msg_str, strlen(msg_str) + 1, "127.0.0.1", 7000);
             }
         }
         ++index;
     }
+
+    return NULL;
 }
 
 int main(int argc, char** argv)
@@ -88,7 +89,7 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    dzlog_debug("[0x%x] =====start", pthread_self());
+    dzlog_debug("[0x%lx] =====start", pthread_self());
 
     signal_init();
     event_thread_create(&thread, thread_run, NULL);

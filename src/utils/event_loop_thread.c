@@ -55,10 +55,10 @@ int event_thread_create(pthread_t* thread, void* (*start_routine)(void*), void* 
     args->func = start_routine;
     args->arg  = arg;
     args->loop = loop;
-    return uv_thread_create(thread, event_thread, args);
+    return pthread_create(thread, NULL, event_thread, args);
 }
 
 void event_thread_join(pthread_t thread)
 {
-    uv_thread_join(thread);
+    pthread_join(thread, NULL);
 }

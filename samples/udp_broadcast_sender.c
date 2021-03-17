@@ -25,7 +25,7 @@ void signal_init()
 void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create(NULL, 0, args->loop, NULL, NULL, NULL);
+    udp_handle   = udp_handle_run(NULL, 0, args->loop, NULL, NULL, NULL);
     udp_set_broadcast(udp_handle, true);
 
     return NULL;
@@ -34,8 +34,8 @@ void* thread_run(void* arg)
 int main(int argc, char** argv)
 {
     pthread_t thread;
-    char* data = "hello, server";
-    int rc     = dzlog_init("./zlog.conf", "udp_sender");
+    const char* data = "hello, server";
+    int rc           = dzlog_init("./zlog.conf", "udp_sender");
     if (rc)
     {
         printf("init zlog failed!\n");
@@ -56,7 +56,7 @@ int main(int argc, char** argv)
             if (udp_handle)
             {
                 dzlog_debug("send message");
-                udp_send_data_ip(udp_handle, data, strlen(data) + 1, "255.255.255.255", 9000);
+                udp_send_data_ip(udp_handle, (char*)data, strlen(data) + 1, "255.255.255.255", 9000);
             }
         }
         ++index;

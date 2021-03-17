@@ -26,15 +26,15 @@ struct udp_data_s
     void* data;
 };
 
-extern udp_socket_t* udp_handle_create(const char* addr, int port, uv_loop_t* loop, udp_handle_on_data_func_t on_data,
-                                       udp_handle_on_send_func_t on_send, udp_handle_on_error_func_t on_error);
+extern udp_socket_t* udp_handle_run(const char* addr, int port, uv_loop_t* loop, udp_handle_on_data_func_t on_data,
+                                    udp_handle_on_send_func_t on_send, udp_handle_on_error_func_t on_error);
 
 extern void udp_handle_close(udp_socket_t* udp_handle);
 
 //发送数据到特定地址，地址用struct sockaddr 表示
-extern void udp_send_data(udp_socket_t* handle, char* data, size_t size, const struct sockaddr* addr);
+extern void udp_send_data(udp_socket_t* handle, char* data, size_t size, struct sockaddr* addr);
 //发送数据到特定ip和端口 如127.0.0. 8000
-extern void udp_send_data_ip(udp_socket_t* udp_handle, char* data, size_t size, const char* ip, unsigned short port);
+extern void udp_send_data_ip(udp_socket_t* udp_handle, char* data, size_t size, const char* ip, int port);
 
 //设置广播开关
 extern int udp_set_broadcast(udp_socket_t* udp_handle, bool on);

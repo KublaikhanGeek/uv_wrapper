@@ -50,7 +50,7 @@ void on_read(udp_socket_t* handle, const struct sockaddr* peer, void* data, size
 void* thread_run(void* arg)
 {
     args_t* args = (args_t*)arg;
-    udp_handle   = udp_handle_create(NULL, 0, args->loop, on_read, NULL, on_error);
+    udp_handle   = udp_handle_run(NULL, 0, args->loop, on_read, NULL, on_error);
 
     return NULL;
 }
@@ -58,8 +58,8 @@ void* thread_run(void* arg)
 int main(int argc, char** argv)
 {
     pthread_t thread;
-    char* data = "hello, server";
-    int rc     = dzlog_init("./zlog.conf", "udp_sender");
+    const char* data = "hello, server";
+    int rc           = dzlog_init("./zlog.conf", "udp_sender");
     if (rc)
     {
         printf("init zlog failed!\n");
@@ -80,7 +80,7 @@ int main(int argc, char** argv)
             if (udp_handle)
             {
                 dzlog_debug("send message to multicast group");
-                udp_send_data_ip(udp_handle, data, strlen(data) + 1, "224.0.0.88", 8000);
+                udp_send_data_ip(udp_handle, (char*)data, strlen(data) + 1, "224.0.0.88", 8000);
             }
         }
         ++index;

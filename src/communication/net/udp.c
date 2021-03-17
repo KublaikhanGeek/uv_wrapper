@@ -71,7 +71,7 @@ static void on_send_cb(uv_udp_send_t* req, int status)
     }
 }
 
-static void close(udp_socket_t* udp_handle)
+static void close_handle(udp_socket_t* udp_handle)
 {
     if (!udp_handle)
     {
@@ -100,7 +100,7 @@ static void async_close_cb(uv_async_t* handle)
         return;
     }
 
-    close(udp_handle);
+    close_handle(udp_handle);
 }
 
 static void send_data(udp_socket_t* handle)
@@ -266,7 +266,7 @@ void udp_handle_close(udp_socket_t* udp_handle)
 
     if (udp_handle->thread_id == uv_thread_self())
     {
-        close(udp_handle);
+        close_handle(udp_handle);
     }
     else
     {

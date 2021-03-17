@@ -16,7 +16,7 @@
 
 #include "tcp_client.h"
 
-static void close(tcp_client_t* tcp_client);
+static void close_handle(tcp_client_t* tcp_client);
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
@@ -130,7 +130,7 @@ static void on_client_write(uv_write_t* req, int status)
     }
 }
 
-static void close(tcp_client_t* tcp_client)
+static void close_handle(tcp_client_t* tcp_client)
 {
     if (tcp_client && tcp_client->conn.session)
     {
@@ -165,7 +165,7 @@ static void async_close_cb(uv_async_t* handle)
         return;
     }
 
-    close(tcp_client);
+    close_handle(tcp_client);
 }
 
 static void send_data(tcp_connection_t* conn)
@@ -321,7 +321,7 @@ void tcp_client_close(tcp_client_t* tcp_client)
 
     if (tcp_client->thread_id == uv_thread_self())
     {
-        close(tcp_client);
+        close_handle(tcp_client);
     }
     else
     {

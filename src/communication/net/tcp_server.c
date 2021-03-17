@@ -24,7 +24,7 @@ static void async_close_cb(uv_async_t* handle);
 static void async_send_cb(uv_async_t* handle);
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff);
 static void tcp_server_conn_close(tcp_connection_t* conn);
-static void close(tcp_server_t* tcp_server);
+static void close_handle(tcp_server_t* tcp_server);
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
@@ -203,7 +203,7 @@ static void tcp_server_conn_close(tcp_connection_t* conn)
     }
 }
 
-static void close(tcp_server_t* tcp_server)
+static void close_handle(tcp_server_t* tcp_server)
 {
     if (!tcp_server)
     {
@@ -245,7 +245,7 @@ static void async_close_cb(uv_async_t* handle)
     {
         return;
     }
-    close(tcp_server);
+    close_handle(tcp_server);
 }
 
 static void send_data(tcp_connection_t* conn)
@@ -371,7 +371,7 @@ void tcp_server_close(tcp_server_t* tcp_server)
     tcp_server->is_closing = true;
     if (tcp_server->thread_id == uv_thread_self())
     {
-        close(tcp_server);
+        close_handle(tcp_server);
     }
     else
     {

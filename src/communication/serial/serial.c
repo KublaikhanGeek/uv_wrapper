@@ -101,14 +101,21 @@ static ssize_t serial_read(serial_t* handle)
     {
         return -1;
     }
-    int size    = serial_bytes_availble(handle->fd);
-    ssize_t ret = read(handle->fd, handle->buf, (size_t)size);
+
+    int size = serial_bytes_availble(handle->fd);
+    if (size <= 0)
+    {
+        return size;
+    }
+
+    ssize_t ret = read(handle->fd, handle->buf, MAX_BUF_LEN);
     if (ret == -1)
     {
         dzlog_warn("Error when reading: %s", strerror(errno));
     }
     else
     {
+        dzlog_warn("reading buf size: %d", ret);
         if (handle->on_data)
         {
             handle->on_data(handle->buf, (size_t)ret);
@@ -117,8 +124,31 @@ static ssize_t serial_read(serial_t* handle)
     return ret;
 }
 
+static void close_handle(serial_t* handle)
+{
+    uv_close((uv_handle_t*)&(handle->async_close), NULL);
+    uv_poll_stop(&(handle->poller));
+    uv_close((uv_handle_t*)&(handle->poller), NULL);
+
+    if (handle->fd > 0)
+    {
+        close(handle->fd);
+    }
+
+    free(handle);
+}
+
+static void async_close_cb(uv_async_t* handle)
+{
+    serial_t* serial_handle = (serial_t*)handle->data;
+    if (serial_handle)
+    {
+        close_handle(serial_handle);
+    }
+}
+
 // Open the serial device.
-serial_t* open_serial(const char* device, int bauds, uv_loop_t* loop)
+serial_t* serial_run(const char* device, uv_loop_t* loop, serial_on_read_func_t on_data)
 {
     serial_t* serial_handle = (serial_t*)malloc(sizeof(serial_t));
     if (!serial_handle)
@@ -126,7 +156,8 @@ serial_t* open_serial(const char* device, int bauds, uv_loop_t* loop)
         return NULL;
     }
 
-    serial_handle->fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    serial_handle->fd      = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    serial_handle->on_data = on_data;
     if (serial_handle->fd < 0)
     {
         dzlog_error("Can't open serial device %s", device);
@@ -141,6 +172,10 @@ serial_t* open_serial(const char* device, int bauds, uv_loop_t* loop)
 
     uv_poll_init(loop, &(serial_handle->poller), serial_handle->fd);
     uv_poll_start(&(serial_handle->poller), UV_READABLE, serial_poll_ev);
+    uv_async_init(loop, &(serial_handle->async_close), async_close_cb);
+    serial_handle->thread_id        = uv_thread_self();
+    serial_handle->poller.data      = serial_handle;
+    serial_handle->async_close.data = serial_handle;
 
     return serial_handle;
 }
@@ -223,13 +258,14 @@ void serial_close(serial_t* handle)
         return;
     }
 
-    uv_poll_stop(&(handle->poller));
-    if (handle->fd > 0)
+    if (handle->thread_id == uv_thread_self())
     {
-        close(handle->fd);
+        close_handle(handle);
     }
-
-    free(handle);
+    else
+    {
+        uv_async_send(&(handle->async_close));
+    }
 }
 
 ssize_t serial_send(serial_t* handle, char* data, size_t size)

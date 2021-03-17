@@ -129,7 +129,12 @@ static void on_client_write(uv_write_t* req, int status)
     {
         free(req);
     }
-    uv_sem_post(&(tcp_client->sem));
+
+    dzlog_debug("[0x%x] on_client_write", uv_thread_self());
+    if (tcp_client->conn.async_send_flag)
+    {
+        uv_sem_post(&(tcp_client->sem));
+    }
 }
 
 static void close(tcp_client_t* tcp_client)
@@ -140,6 +145,11 @@ static void close(tcp_client_t* tcp_client)
         {
             tcp_client->on_conn_close(&(tcp_client->conn));
         }
+
+        uv_mutex_destroy(&(tcp_client->mutex));
+        uv_sem_destroy(&(tcp_client->sem));
+        uv_close((uv_handle_t*)&(tcp_client->async_send), NULL);
+        uv_close((uv_handle_t*)&(tcp_client->async_close), NULL);
 
         uv_read_stop((uv_stream_t*)tcp_client->conn.session);
         if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
@@ -161,7 +171,7 @@ static void async_close_cb(uv_async_t* handle)
     {
         return;
     }
-    uv_close((uv_handle_t*)handle, NULL);
+
     close(tcp_client);
 }
 
@@ -176,7 +186,10 @@ static void send_data(tcp_connection_t* conn)
             tcp_client->on_conn_error(&(tcp_client->conn), "allocate memory failed");
         }
         dzlog_error("allocate  memory failed");
-        uv_sem_post(&(tcp_client->sem));
+        if (tcp_client->conn.async_send_flag)
+        {
+            uv_sem_post(&(tcp_client->sem));
+        }
         return;
     }
 
@@ -261,7 +274,7 @@ tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t
 }
 
 /*******************************************************************************
- * function name : tcp_client_async_send_data
+ * function name : tcp_client_send_data
  * description	 : send data
  * param[in]     : conn; data; size
  * param[out] 	 : none
@@ -277,18 +290,23 @@ void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size)
     tcp_client_t* tcp_client = (tcp_client_t*)conn->data;
     if (tcp_client->thread_id == uv_thread_self())
     {
-        uv_buf_t buf = uv_buf_init(data, (unsigned int)size);
-        conn->data2  = &buf;
+        dzlog_debug("[0x%x] tcp_client_send_data in loop", uv_thread_self());
+        conn->async_send_flag = false;
+        uv_buf_t buf          = uv_buf_init(data, (unsigned int)size);
+        conn->data2           = &buf;
         send_data(conn);
     }
     else
     {
         uv_mutex_lock(&(tcp_client->mutex));
+        dzlog_debug("[0x%x] tcp_client_send_data async start", uv_thread_self());
+        conn->async_send_flag       = true;
         uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
         conn->data2                 = &buf;
         tcp_client->async_send.data = conn;
         uv_async_send(&(tcp_client->async_send));
         uv_sem_wait(&(tcp_client->sem));
+        dzlog_debug("[0x%x] tcp_client_send_data async end", uv_thread_self());
         uv_mutex_unlock(&(tcp_client->mutex));
     }
 }
@@ -307,8 +325,12 @@ void tcp_client_close(tcp_client_t* tcp_client)
         return;
     }
 
-    uv_mutex_destroy(&(tcp_client->mutex));
-    uv_sem_destroy(&(tcp_client->sem));
-    uv_close((uv_handle_t*)&(tcp_client->async_send), NULL);
-    uv_async_send(&(tcp_client->async_close));
+    if (tcp_client->thread_id == uv_thread_self())
+    {
+        close(tcp_client);
+    }
+    else
+    {
+        uv_async_send(&(tcp_client->async_close));
+    }
 }

@@ -44,8 +44,9 @@ typedef enum
 struct tcp_connection_s
 {
     uv_tcp_t* session;
-    void* data;  // 一般指向父结构，例如tcp_client_t或tcp_server_t
-    void* data2; // 一般用于发送数据等其他数据
+    void* data;           // 一般指向父结构，例如tcp_client_t或tcp_server_t
+    void* data2;          // 一般用于发送数据等其他数据
+    bool async_send_flag; // 异步发送标志
     QUEUE node;
 };
 
@@ -92,8 +93,9 @@ struct udp_socket_s
     uv_sem_t sem;
     uv_thread_t thread_id;
     struct sockaddr send_addr;
-    void* data1; //公共数据
-    void* data2; //公共数据
+    void* data1;          //公共数据
+    void* data2;          //公共数据
+    bool async_send_flag; // 异步发送标志
     char buf[MAX_BUF_LEN];
 
     //各个回调函数

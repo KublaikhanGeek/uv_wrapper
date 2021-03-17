@@ -12,7 +12,10 @@ void signal_handle(int num)
     dzlog_info("get a signal[%d]\n", num);
     stop = 1;
     sleep(3);
-    tcp_server_close(tcp_server);
+    if (tcp_server)
+    {
+        tcp_server_close(tcp_server);
+    }
 }
 
 void signal_init()
@@ -82,7 +85,10 @@ int main(int argc, char** argv)
         sleep(1);
         if (0 == (index % 5))
         {
-            tcp_server_print_all_conn(tcp_server);
+            if (tcp_server)
+            {
+                tcp_server_print_all_conn(tcp_server);
+            }
         }
         ++index;
     }

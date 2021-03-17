@@ -63,7 +63,12 @@ static void on_send_cb(uv_udp_send_t* req, int status)
     {
         free(req);
     }
-    uv_sem_post(&(udp_handle->sem));
+
+    dzlog_debug("[0x%x] on_send_cb", uv_thread_self());
+    if (udp_handle->async_send_flag)
+    {
+        uv_sem_post(&(udp_handle->sem));
+    }
 }
 
 static void close(udp_socket_t* udp_handle)
@@ -72,6 +77,11 @@ static void close(udp_socket_t* udp_handle)
     {
         return;
     }
+
+    uv_mutex_destroy(&(udp_handle->mutex));
+    uv_sem_destroy(&(udp_handle->sem));
+    uv_close((uv_handle_t*)&(udp_handle->async_send), NULL);
+    uv_close((uv_handle_t*)&(udp_handle->async_close), NULL);
 
     uv_udp_recv_stop(&udp_handle->udp);
     if (!uv_is_closing((uv_handle_t*)&(udp_handle->udp)))
@@ -90,7 +100,6 @@ static void async_close_cb(uv_async_t* handle)
         return;
     }
 
-    uv_close((uv_handle_t*)handle, NULL);
     close(udp_handle);
 }
 
@@ -104,7 +113,10 @@ static void send_data(udp_socket_t* handle)
             handle->on_error(handle, "allocate memory failed");
         }
         dzlog_error("allocate memory failed");
-        uv_sem_post(&(handle->sem));
+        if (handle->async_send_flag)
+        {
+            uv_sem_post(&(handle->sem));
+        }
         return;
     }
 
@@ -197,22 +209,25 @@ void udp_send_data(udp_socket_t* udp_handle, char* data, size_t size, const stru
 
     if (udp_handle->thread_id == uv_thread_self())
     {
-        dzlog_debug("udp_send_data sync");
-        uv_buf_t buf      = uv_buf_init(data, (unsigned int)size);
-        udp_handle->data1 = &buf;
-        udp_handle->data2 = addr;
+        dzlog_debug("[0x%x] udp_send_data sync", uv_thread_self());
+        udp_handle->async_send_flag = false;
+        uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
+        udp_handle->data1           = &buf;
+        udp_handle->data2           = addr;
         send_data(udp_handle);
     }
     else
     {
-        dzlog_debug("udp_send_data async");
         uv_mutex_lock(&(udp_handle->mutex));
+        dzlog_debug("[0x%x] udp_send_data async start", uv_thread_self());
+        udp_handle->async_send_flag = true;
         uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
         udp_handle->data1           = &buf;
         udp_handle->data2           = addr;
         udp_handle->async_send.data = udp_handle;
         uv_async_send(&(udp_handle->async_send));
         uv_sem_wait(&(udp_handle->sem));
+        dzlog_debug("[0x%x] udp_send_data async end", uv_thread_self());
         uv_mutex_unlock(&(udp_handle->mutex));
     }
 }
@@ -254,10 +269,19 @@ void udp_send_data_ip(udp_socket_t* udp_handle, char* data, size_t size, const c
  */
 void udp_handle_close(udp_socket_t* udp_handle)
 {
-    uv_mutex_destroy(&(udp_handle->mutex));
-    uv_sem_destroy(&(udp_handle->sem));
-    uv_close((uv_handle_t*)&(udp_handle->async_send), NULL);
-    uv_async_send(&(udp_handle->async_close));
+    if (!udp_handle)
+    {
+        return;
+    }
+
+    if (udp_handle->thread_id == uv_thread_self())
+    {
+        close(udp_handle);
+    }
+    else
+    {
+        uv_async_send(&(udp_handle->async_close));
+    }
 }
 
 /*

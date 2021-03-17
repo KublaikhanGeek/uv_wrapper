@@ -16,8 +16,8 @@
 #include "tcp_server.h"
 
 static void on_new_connection(uv_stream_t* server, int status);
-static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf);
-static void on_client_write(uv_write_t* req, int status);
+static void on_conn_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf);
+static void on_conn_write(uv_write_t* req, int status);
 static void on_close_connection(uv_handle_t* handle);
 static void on_close_server(uv_handle_t* handle);
 static void async_close_cb(uv_async_t* handle);
@@ -28,15 +28,16 @@ static void close(tcp_server_t* tcp_server);
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
-    tcp_connection_t* tcp_client = (tcp_connection_t*)handle->data;
-    tcp_server_t* tcp_server     = (tcp_server_t*)tcp_client->data;
-    buff->base                   = tcp_server->buf;
-    buff->len                    = MAX_BUF_LEN;
+    tcp_connection_t* conn   = (tcp_connection_t*)handle->data;
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
+    buff->base               = tcp_server->buf;
+    buff->len                = MAX_BUF_LEN;
 }
 
-static void on_client_write(uv_write_t* req, int status)
+static void on_conn_write(uv_write_t* req, int status)
 {
-    tcp_server_t* tcp_server = (tcp_server_t*)req->data;
+    tcp_connection_t* conn   = (tcp_connection_t*)req->data;
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
     if (status < 0)
     {
         dzlog_error("Write error!");
@@ -46,19 +47,22 @@ static void on_client_write(uv_write_t* req, int status)
         free(req);
     }
 
-    dzlog_debug("on_client_write");
-    uv_sem_post(&(tcp_server->sem));
+    dzlog_debug("[0x%x] on_conn_write", uv_thread_self());
+    if (conn->async_send_flag)
+    {
+        uv_sem_post(&(tcp_server->sem));
+    }
 }
 
 static void on_close_connection(uv_handle_t* handle)
 {
-    tcp_connection_t* tcp_client = (tcp_connection_t*)handle->data;
-    tcp_server_t* tcp_server     = (tcp_server_t*)tcp_client->data;
+    tcp_connection_t* conn   = (tcp_connection_t*)handle->data;
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
     if (tcp_server->on_conn_close)
     {
-        tcp_server->on_conn_close(tcp_client);
+        tcp_server->on_conn_close(conn);
     }
-    QUEUE_REMOVE(&(tcp_client->node));
+    QUEUE_REMOVE(&(conn->node));
     tcp_server->conn_count--;
 
     if (handle)
@@ -66,9 +70,9 @@ static void on_close_connection(uv_handle_t* handle)
         free(handle);
     }
 
-    if (tcp_client)
+    if (conn)
     {
-        free(tcp_client);
+        free(conn);
     }
 
     dzlog_debug("tcp conn count: %d", tcp_server->conn_count);
@@ -79,15 +83,15 @@ static void on_close_connection(uv_handle_t* handle)
     }
 }
 
-static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf)
+static void on_conn_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf)
 {
-    tcp_connection_t* tcp_client = (tcp_connection_t*)client->data;
-    tcp_server_t* tcp_server     = (tcp_server_t*)tcp_client->data;
+    tcp_connection_t* conn   = (tcp_connection_t*)client->data;
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
     if (nread > 0)
     {
         if (tcp_server->on_read)
         {
-            tcp_server->on_read(tcp_client, buf->base, (size_t)nread);
+            tcp_server->on_read(conn, buf->base, (size_t)nread);
         }
     }
     else if (nread == 0)
@@ -98,9 +102,9 @@ static void on_client_read(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     {
         if (tcp_server->on_conn_error)
         {
-            tcp_server->on_conn_error(tcp_client, "error on_client_read");
+            tcp_server->on_conn_error(conn, "error on_conn_read");
         }
-        tcp_server_conn_close(tcp_client);
+        tcp_server_conn_close(conn);
     }
 }
 
@@ -135,30 +139,30 @@ static void on_new_connection(uv_stream_t* server, int status)
 
     uv_tcp_init(tcp_server->uvloop, client);
 
-    int result = uv_accept(server, (uv_stream_t*)client);
-    bool conn  = false;
+    int result       = uv_accept(server, (uv_stream_t*)client);
+    bool conn_status = false;
     if (result == 0)
     {
-        tcp_connection_t* tcp_client = calloc(1, sizeof(tcp_connection_t));
-        if (tcp_client != NULL)
+        tcp_connection_t* conn = calloc(1, sizeof(tcp_connection_t));
+        if (conn != NULL)
         {
-            conn = true;
+            conn_status = true;
 
-            tcp_client->data          = tcp_server;
-            tcp_client->session       = client;
-            tcp_client->session->data = tcp_client;
-            QUEUE_INIT(&(tcp_client->node));
-            QUEUE_INSERT_TAIL(&(tcp_server->sessions), &(tcp_client->node));
+            conn->data          = tcp_server;
+            conn->session       = client;
+            conn->session->data = conn;
+            QUEUE_INIT(&(conn->node));
+            QUEUE_INSERT_TAIL(&(tcp_server->sessions), &(conn->node));
             tcp_server->conn_count++; //服务连接数
             if (tcp_server->on_conn_open)
             {
-                tcp_server->on_conn_open(tcp_client);
+                tcp_server->on_conn_open(conn);
             }
-            uv_read_start((uv_stream_t*)client, alloc_buffer, on_client_read);
+            uv_read_start((uv_stream_t*)client, alloc_buffer, on_conn_read);
         }
     }
 
-    if (!conn)
+    if (!conn_status)
     {
         dzlog_error("accept a new connection error");
         if (tcp_server->on_conn_error)
@@ -207,10 +211,16 @@ static void close(tcp_server_t* tcp_server)
     }
 
     dzlog_debug("tcp_server_close");
+
     if (!uv_is_closing((uv_handle_t*)&(tcp_server->server)))
     {
         uv_close((uv_handle_t*)(&(tcp_server->server)), on_close_server);
     }
+
+    uv_mutex_destroy(&(tcp_server->mutex));
+    uv_sem_destroy(&(tcp_server->sem));
+    uv_close((uv_handle_t*)&(tcp_server->async_send), NULL);
+    uv_close((uv_handle_t*)&(tcp_server->async_close), NULL);
 
     if (QUEUE_EMPTY(&(tcp_server->sessions)))
     {
@@ -235,7 +245,6 @@ static void async_close_cb(uv_async_t* handle)
     {
         return;
     }
-    uv_close((uv_handle_t*)handle, NULL);
     close(tcp_server);
 }
 
@@ -250,12 +259,15 @@ static void send_data(tcp_connection_t* conn)
             tcp_server->on_conn_error(conn, "allocate memory failed");
         }
         dzlog_error("allocate  memory failed");
-        uv_sem_post(&(tcp_server->sem));
+        if (conn->async_send_flag)
+        {
+            uv_sem_post(&(tcp_server->sem));
+        }
         return;
     }
 
-    write_req->data = tcp_server;
-    uv_write(write_req, (uv_stream_t*)conn->session, conn->data2, 1, on_client_write);
+    write_req->data = conn;
+    uv_write(write_req, (uv_stream_t*)conn->session, conn->data2, 1, on_conn_write);
 }
 
 static void async_send_cb(uv_async_t* handle)
@@ -322,13 +334,20 @@ tcp_server_t* tcp_server_run(const char* server_addr, int server_port, uv_loop_t
         uv_ip4_addr(server_addr, server_port, (struct sockaddr_in*)&bind_addr);
     }
 
-    uv_tcp_bind(server, (const struct sockaddr*)&bind_addr, 0);
-    server->data = tcp_server;
-    int r        = uv_listen((uv_stream_t*)server, 5, on_new_connection);
-    if (r)
+    int ret = uv_tcp_bind(server, (const struct sockaddr*)&bind_addr, 0);
+    if (ret)
     {
-        dzlog_error("listen tcp server failed:%d\n", r);
-        free(tcp_server);
+        dzlog_error("tcp server bind %d failed:%d\n", server_port, ret);
+        tcp_server_close(tcp_server);
+        return NULL;
+    }
+
+    server->data = tcp_server;
+    ret          = uv_listen((uv_stream_t*)server, 5, on_new_connection);
+    if (ret)
+    {
+        dzlog_error("listen tcp server failed:%d\n", ret);
+        tcp_server_close(tcp_server);
         return NULL;
     }
 
@@ -350,10 +369,14 @@ void tcp_server_close(tcp_server_t* tcp_server)
     }
 
     tcp_server->is_closing = true;
-    uv_mutex_destroy(&(tcp_server->mutex));
-    uv_sem_destroy(&(tcp_server->sem));
-    uv_close((uv_handle_t*)&(tcp_server->async_send), NULL);
-    uv_async_send(&(tcp_server->async_close));
+    if (tcp_server->thread_id == uv_thread_self())
+    {
+        close(tcp_server);
+    }
+    else
+    {
+        uv_async_send(&(tcp_server->async_close));
+    }
 }
 
 /*******************************************************************************
@@ -397,34 +420,37 @@ void tcp_server_send_data_2_all(tcp_server_t* tcp_server, char* data, size_t siz
 /*******************************************************************************
  * function name : tcp_server_send_data
  * description	 : send data
- * param[in]     : tcp_client, data, size
+ * param[in]     : conn, data, size
  * param[out] 	 : none
  * return 		 : none
  *******************************************************************************/
-void tcp_server_send_data(tcp_connection_t* tcp_client, char* data, size_t size)
+void tcp_server_send_data(tcp_connection_t* conn, char* data, size_t size)
 {
-    if (!tcp_client || !data)
+    if (!conn || !data)
     {
         return;
     }
 
-    tcp_server_t* tcp_server = (tcp_server_t*)tcp_client->data;
+    tcp_server_t* tcp_server = (tcp_server_t*)conn->data;
     if (tcp_server->thread_id == uv_thread_self())
     {
-        dzlog_debug("send data sync");
-        uv_buf_t buf      = uv_buf_init(data, (unsigned int)size);
-        tcp_client->data2 = &buf;
-        send_data(tcp_client);
+        dzlog_debug("[0x%x] send data sync", uv_thread_self());
+        conn->async_send_flag = false;
+        uv_buf_t buf          = uv_buf_init(data, (unsigned int)size);
+        conn->data2           = &buf;
+        send_data(conn);
     }
     else
     {
-        dzlog_debug("send data async");
         uv_mutex_lock(&(tcp_server->mutex));
+        dzlog_debug("[0x%x] send data async start", uv_thread_self());
+        conn->async_send_flag       = true;
         uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
-        tcp_client->data2           = &buf;
-        tcp_server->async_send.data = tcp_client;
+        conn->data2                 = &buf;
+        tcp_server->async_send.data = conn;
         uv_async_send(&(tcp_server->async_send));
         uv_sem_wait(&(tcp_server->sem));
+        dzlog_debug("[0x%x] send data async end", uv_thread_self());
         uv_mutex_unlock(&(tcp_server->mutex));
     }
 }

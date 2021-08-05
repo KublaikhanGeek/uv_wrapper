@@ -23,13 +23,13 @@ static void* event_thread_func(void* arg)
     return NULL;
 }
 
-void gcs_init()
+void component_init()
 {
     msg_queue = msg_queue_create(COMPONENT, on_msg);
     event_thread_create(&event_thread, event_thread_func, NULL);
 }
 
-void gcs_uninit()
+void component_uninit()
 {
     msg_queue_destroy(msg_queue);
     udp_handle_close(udp_handle);

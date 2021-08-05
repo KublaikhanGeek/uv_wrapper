@@ -10,8 +10,9 @@ udp_socket_t* udp_handle = NULL;
 void signal_handle(int num)
 {
     dzlog_info("get a signal[%d]\n", num);
-    udp_handle_close(udp_handle);
     stop = 1;
+    sleep(2);
+    udp_handle_close(udp_handle);
 }
 
 void signal_init()
@@ -75,6 +76,8 @@ int main(int argc, char** argv)
         sleep(1);
     }
 
-    event_thread_join(thread);
+    event_thread_destroy(thread);
     zlog_fini();
+
+    return 0;
 }

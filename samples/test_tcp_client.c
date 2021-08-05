@@ -99,15 +99,18 @@ int main(int argc, char** argv)
     signal_init();
     event_thread_create(&thread, tread_run, NULL);
 
-    for (size_t i = 0; i < 5; i++)
+    size_t i = 0;
+    for (i = 0; i < 5; i++)
     {
         pthread_create(&id[i], NULL, thread_send, (void*)thread_info[i]);
     }
 
-    event_thread_join(thread);
-    for (size_t i = 0; i < 5; i++)
+    event_thread_destroy(thread);
+    for (i = 0; i < 5; i++)
     {
         pthread_join(id[i], NULL);
     }
     zlog_fini();
+
+    return 0;
 }

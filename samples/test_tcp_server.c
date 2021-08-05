@@ -95,7 +95,9 @@ int main(int argc, char** argv)
         ++index;
     }
 
-    event_thread_join(thread);
+    event_thread_destroy(thread);
     pthread_join(thread_send, NULL);
     zlog_fini();
+
+    return 0;
 }

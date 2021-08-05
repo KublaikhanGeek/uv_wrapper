@@ -15,5 +15,5 @@ struct args_s
 };
 
 extern int event_thread_create(pthread_t* thread, void* (*start_routine)(void*), void* arg);
-extern void event_thread_join(pthread_t thread);
+extern void event_thread_destroy(pthread_t thread);
 #endif

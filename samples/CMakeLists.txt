@@ -4,7 +4,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/src/communication/net
   ${PROJECT_SOURCE_DIR}/src/communication/serial)
 
-#link_directories(${PROJECT_SOURCE_DIR}/lib)
+link_directories(${PROJECT_SOURCE_DIR}/lib)
 
 add_executable(test_tcp_server test_tcp_server.c)
 target_link_libraries(test_tcp_server communication utils uv zlog pthread)

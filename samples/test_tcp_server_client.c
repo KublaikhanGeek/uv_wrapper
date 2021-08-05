@@ -12,9 +12,10 @@ static int conn_status   = 0;
 void signal_handle(int num)
 {
     dzlog_info("get a signal[%d]\n", num);
+    stop = 1;
+    sleep(2);
     tcp_server_close(tcp_server);
     tcp_client_close(tcp_client);
-    stop = 1;
 }
 
 void signal_init()
@@ -93,7 +94,7 @@ int main(int argc, char** argv)
     while (0 == stop)
     {
         sleep(1);
-        if (0 == (index % 5))
+        if (0 == stop && 0 == (index % 5))
         {
             tcp_server_print_all_conn(tcp_server);
             if (conn_status == 1)
@@ -104,6 +105,8 @@ int main(int argc, char** argv)
         ++index;
     }
 
-    event_thread_join(thread);
+    event_thread_destroy(thread);
     zlog_fini();
+
+    return 0;
 }

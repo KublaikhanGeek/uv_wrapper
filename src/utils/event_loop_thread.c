@@ -58,7 +58,7 @@ int event_thread_create(pthread_t* thread, void* (*start_routine)(void*), void* 
     return pthread_create(thread, NULL, event_thread, args);
 }
 
-void event_thread_join(pthread_t thread)
+void event_thread_destroy(pthread_t thread)
 {
     pthread_join(thread, NULL);
 }

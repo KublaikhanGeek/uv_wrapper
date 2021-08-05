@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "complex": "cpp",
-        "stream_server.h": "c"
+        "stream_server.h": "c",
+        "fcntl.h": "c"
     }
 }

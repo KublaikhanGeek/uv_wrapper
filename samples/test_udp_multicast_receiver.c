@@ -79,7 +79,7 @@ int main(int argc, char** argv)
     while (0 == stop)
     {
         sleep(1);
-        if (0 == (index % 5))
+        if (0 == stop && 0 == (index % 5))
         {
             if (udp_handle)
             {
@@ -90,6 +90,8 @@ int main(int argc, char** argv)
         ++index;
     }
 
-    event_thread_join(thread);
+    event_thread_destroy(thread);
     zlog_fini();
+
+    return 0;
 }

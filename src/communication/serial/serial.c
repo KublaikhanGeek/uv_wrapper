@@ -1,19 +1,3 @@
-/******************************************************************************
- * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
- * All rights reserved.
- *******************************************************************************
- * File name     : serial.c
- * Description   :
- * Version       : v1.0
- * Create Time   : 2021/2/25
- * Author        : yuanshunbao
- * Modify history:
- *******************************************************************************
- * Modify Time   Modify person  Modification
- * ------------------------------------------------------------------------------
- *
- *******************************************************************************/
-
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -124,11 +108,19 @@ static ssize_t serial_read(serial_t* handle)
     return ret;
 }
 
+static void close_cb(uv_handle_t* handle)
+{
+    if (handle)
+    {
+        free(handle);
+    }
+}
+
 static void close_handle(serial_t* handle)
 {
-    uv_close((uv_handle_t*)&(handle->async_close), NULL);
-    uv_poll_stop(&(handle->poller));
-    uv_close((uv_handle_t*)&(handle->poller), NULL);
+    uv_close((uv_handle_t*)(handle->async_close), close_cb);
+    uv_poll_stop(handle->poller);
+    uv_close((uv_handle_t*)(handle->poller), close_cb);
 
     if (handle->fd > 0)
     {
@@ -165,17 +157,32 @@ serial_t* serial_run(const char* device, uv_loop_t* loop, serial_on_read_func_t 
         return NULL;
     }
 
+    serial_handle->poller = (uv_poll_t*)calloc(1, sizeof(uv_poll_t));
+    if (serial_handle->poller == NULL)
+    {
+        free(serial_handle);
+        return NULL;
+    }
+
+    serial_handle->async_close = (uv_async_t*)calloc(1, sizeof(uv_async_t));
+    if (serial_handle->async_close == NULL)
+    {
+        free(serial_handle->poller);
+        free(serial_handle);
+        return NULL;
+    }
+
     if (0 == isatty(STDIN_FILENO))
     {
         dzlog_error("standard input is not a terminal device");
     }
 
-    uv_poll_init(loop, &(serial_handle->poller), serial_handle->fd);
-    uv_poll_start(&(serial_handle->poller), UV_READABLE, serial_poll_ev);
-    uv_async_init(loop, &(serial_handle->async_close), async_close_cb);
-    serial_handle->thread_id        = uv_thread_self();
-    serial_handle->poller.data      = serial_handle;
-    serial_handle->async_close.data = serial_handle;
+    uv_poll_init(loop, serial_handle->poller, serial_handle->fd);
+    uv_poll_start(serial_handle->poller, UV_READABLE, serial_poll_ev);
+    uv_async_init(loop, serial_handle->async_close, async_close_cb);
+    serial_handle->thread_id         = uv_thread_self();
+    serial_handle->poller->data      = serial_handle;
+    serial_handle->async_close->data = serial_handle;
 
     return serial_handle;
 }
@@ -264,7 +271,7 @@ void serial_close(serial_t* handle)
     }
     else
     {
-        uv_async_send(&(handle->async_close));
+        uv_async_send(handle->async_close);
     }
 }
 

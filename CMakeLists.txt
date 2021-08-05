@@ -7,6 +7,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+add_definitions(-D_GNU_SOURCE)
+
 set(C_FLAGS
  #-Werror
  -Wall
@@ -22,7 +24,8 @@ set(C_FLAGS
 
 string(REPLACE ";" " " CMAKE_C_FLAGS "${C_FLAGS}")
 
-set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb -fsanitize=address")
+#set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb -fsanitize=address")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 

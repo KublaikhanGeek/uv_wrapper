@@ -1,18 +1,3 @@
-/******************************************************************************
- * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
- * All rights reserved.
- *******************************************************************************
- * File name     : serial.h
- * Description   :
- * Version       : v1.0
- * Create Time   : 2021/2/25
- * Author        : yuanshunbao
- * Modify history:
- *******************************************************************************
- * Modify Time   Modify person  Modification
- * ------------------------------------------------------------------------------
- *
- *******************************************************************************/
 #ifndef SERIAL_H_
 #define SERIAL_H_
 #include "uv.h"
@@ -24,8 +9,8 @@ typedef void (*serial_on_read_func_t)(void* data, size_t len);
 typedef struct serial_s serial_t;
 struct serial_s
 {
-    uv_poll_t poller;
-    uv_async_t async_close;
+    uv_poll_t* poller;
+    uv_async_t* async_close;
     uv_thread_t thread_id;
     int fd;
     char buf[MAX_BUF_LEN];

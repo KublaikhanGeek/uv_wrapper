@@ -1,19 +1,3 @@
-/******************************************************************************
- * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
- * All rights reserved.
- *******************************************************************************
- * File name     : defines.h
- * Description   :
- * Version       : v1.0
- * Create Time   : 2021/2/25
- * Author        : yuanshunbao
- * Modify history:
- *******************************************************************************
- * Modify Time   Modify person  Modification
- * ------------------------------------------------------------------------------
- *
- *******************************************************************************/
-
 #ifndef DEFINES_H_
 #define DEFINES_H_
 
@@ -21,7 +5,8 @@
 #include <string.h>
 #include "zlog.h"
 #include "uv_wrapper.h"
-#include "../../utils/queue.h"
+#include "queue.h"
+#include "common.h"
 
 #define MAX_BUF_LEN 4096
 
@@ -51,12 +36,6 @@ typedef void (*tcp_conn_on_error_func_t)(tcp_connection_t* conn, const char* err
 typedef void (*tcp_conn_on_write_func_t)(tcp_connection_t* conn,
                                          int status); //异步发送数据回到函数, status 为0表示发送成功，否则发送失败
 
-typedef enum
-{
-    true  = 1,
-    false = 0
-} bool;
-
 struct tcp_connection_s
 {
     uv_tcp_t* session;
@@ -69,8 +48,8 @@ struct tcp_connection_s
 struct tcp_client_s
 {
     uv_loop_t* uvloop;
-    uv_async_t async_close; // 关闭客户端事件通知句柄
-    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_async_t* async_close; // 关闭客户端事件通知句柄
+    uv_async_t* async_send;  // 发送数据事件通知句柄
     uv_mutex_t mutex;
     uv_sem_t sem;
     uv_connect_t* connect_req;
@@ -86,9 +65,9 @@ struct tcp_server_s
     const char* server_addr;
     int port;
     uv_loop_t* uvloop;
-    uv_tcp_t server;        // 服务句柄
-    uv_async_t async_close; // 关闭客户端事件通知句柄
-    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_tcp_t* server;        // 服务句柄
+    uv_async_t* async_close; // 关闭客户端事件通知句柄
+    uv_async_t* async_send;  // 发送数据事件通知句柄
     uv_mutex_t mutex;
     uv_sem_t sem;
     uv_thread_t thread_id;
@@ -102,9 +81,9 @@ struct tcp_server_s
 struct udp_socket_s
 {
     uv_loop_t* uvloop;
-    uv_udp_t udp;           // udp的uv实例
-    uv_async_t async_close; // 关闭客户端事件通知句
-    uv_async_t async_send;  // 发送数据事件通知句柄
+    uv_udp_t* udp;           // udp的uv实例
+    uv_async_t* async_close; // 关闭客户端事件通知句
+    uv_async_t* async_send;  // 发送数据事件通知句柄
     uv_mutex_t mutex;
     uv_sem_t sem;
     uv_thread_t thread_id;

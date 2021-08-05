@@ -1,22 +1,14 @@
-/******************************************************************************
- * Copyright (c) 2007-2019, ZeroTech Co., Ltd.
- * All rights reserved.
- *******************************************************************************
- * File name     : tcp_client.c
- * Description   :
- * Version       : v1.0
- * Create Time   : 2021/2/25
- * Author        : yuanshunbao
- * Modify history:
- *******************************************************************************
- * Modify Time   Modify person  Modification
- * ------------------------------------------------------------------------------
- *
- *******************************************************************************/
-
 #include "tcp_client.h"
 
 static void close_handle(tcp_client_t* tcp_client);
+
+static void close_cb(uv_handle_t* handle)
+{
+    if (handle)
+    {
+        free(handle);
+    }
+}
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buff)
 {
@@ -141,8 +133,8 @@ static void close_handle(tcp_client_t* tcp_client)
 
         uv_mutex_destroy(&(tcp_client->mutex));
         uv_sem_destroy(&(tcp_client->sem));
-        uv_close((uv_handle_t*)&(tcp_client->async_send), NULL);
-        uv_close((uv_handle_t*)&(tcp_client->async_close), NULL);
+        uv_close((uv_handle_t*)(tcp_client->async_send), close_cb);
+        uv_close((uv_handle_t*)(tcp_client->async_close), close_cb);
 
         uv_read_stop((uv_stream_t*)tcp_client->conn.session);
         if (!uv_is_closing((uv_handle_t*)tcp_client->conn.session))
@@ -224,13 +216,13 @@ tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t
         return NULL;
     }
 
-    tcp_client->uvloop       = loop;
     tcp_client->conn.session = (uv_tcp_t*)calloc(1, sizeof(uv_tcp_t));
     if (tcp_client->conn.session == NULL)
     {
         free(tcp_client);
         return NULL;
     }
+
     tcp_client->connect_req = (uv_connect_t*)calloc(1, sizeof(uv_connect_t));
     if (tcp_client->connect_req == NULL)
     {
@@ -239,21 +231,41 @@ tcp_client_t* tcp_client_run(const char* server_addr, int server_port, uv_loop_t
         return NULL;
     }
 
+    tcp_client->async_send = (uv_async_t*)calloc(1, sizeof(uv_async_t));
+    if (tcp_client->async_send == NULL)
+    {
+        free(tcp_client->connect_req);
+        free(tcp_client->conn.session);
+        free(tcp_client);
+        return NULL;
+    }
+
+    tcp_client->async_close = (uv_async_t*)calloc(1, sizeof(uv_async_t));
+    if (tcp_client->async_close == NULL)
+    {
+        free(tcp_client->async_send);
+        free(tcp_client->connect_req);
+        free(tcp_client->conn.session);
+        free(tcp_client);
+        return NULL;
+    }
+
     uv_mutex_init(&(tcp_client->mutex));
     uv_sem_init(&(tcp_client->sem), 0);
-    uv_async_init(loop, &(tcp_client->async_close), async_close_cb);
-    uv_async_init(loop, &(tcp_client->async_send), async_send_cb);
-    tcp_client->async_close.data = tcp_client;
-    tcp_client->on_conn_open     = on_open;
-    tcp_client->on_conn_close    = on_close;
-    tcp_client->on_conn_error    = on_error;
-    tcp_client->on_read          = on_data;
-    tcp_client->on_write         = on_send;
-    tcp_client->conn.data        = tcp_client;
-    tcp_client->thread_id        = uv_thread_self();
+    uv_async_init(loop, tcp_client->async_close, async_close_cb);
+    uv_async_init(loop, tcp_client->async_send, async_send_cb);
+    uv_tcp_init(loop, tcp_client->conn.session);
+    tcp_client->uvloop            = loop;
+    tcp_client->async_close->data = tcp_client;
+    tcp_client->on_conn_open      = on_open;
+    tcp_client->on_conn_close     = on_close;
+    tcp_client->on_conn_error     = on_error;
+    tcp_client->on_read           = on_data;
+    tcp_client->on_write          = on_send;
+    tcp_client->conn.data         = tcp_client;
+    tcp_client->thread_id         = uv_thread_self();
 
-    uv_tcp_init(tcp_client->uvloop, tcp_client->conn.session);
-    struct sockaddr send_addr = { 0 };
+    struct sockaddr send_addr;
     if (strchr(server_addr, ':'))
     {
         uv_ip6_addr(server_addr, server_port, (struct sockaddr_in6*)&send_addr);
@@ -294,11 +306,11 @@ void tcp_client_send_data(tcp_connection_t* conn, char* data, size_t size)
     {
         uv_mutex_lock(&(tcp_client->mutex));
         dzlog_debug("[0x%lx] tcp_client_send_data async start", uv_thread_self());
-        conn->async_send_flag       = true;
-        uv_buf_t buf                = uv_buf_init(data, (unsigned int)size);
-        conn->data2                 = &buf;
-        tcp_client->async_send.data = conn;
-        uv_async_send(&(tcp_client->async_send));
+        conn->async_send_flag        = true;
+        uv_buf_t buf                 = uv_buf_init(data, (unsigned int)size);
+        conn->data2                  = &buf;
+        tcp_client->async_send->data = conn;
+        uv_async_send(tcp_client->async_send);
         uv_sem_wait(&(tcp_client->sem));
         dzlog_debug("[0x%lx] tcp_client_send_data async end", uv_thread_self());
         uv_mutex_unlock(&(tcp_client->mutex));
@@ -325,6 +337,6 @@ void tcp_client_close(tcp_client_t* tcp_client)
     }
     else
     {
-        uv_async_send(&(tcp_client->async_close));
+        uv_async_send(tcp_client->async_close);
     }
 }
